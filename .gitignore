@@ -1,0 +1,20 @@
+#early scripts
+optionsLookup.py
+tickerLookup.py
+#initial
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.DS_Store
+/data/hv30_cache/
+
+#vscode
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json

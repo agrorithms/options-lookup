@@ -1,0 +1,184 @@
+/* Custom styles for Stock Dashboard */
+
+/* Smooth font rendering */
+body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ticker input uppercase */
+#ticker-input {
+    text-transform: uppercase;
+    font-weight: bold;
+    font-size: 1.1rem;
+    letter-spacing: 1px;
+}
+
+/* Chart container */
+#candlestick-chart {
+    border-radius: 8px;
+}
+
+/* Tab content padding */
+.tab-content {
+    padding-top: 1rem;
+}
+
+/* DataTable overrides for dark theme */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table {
+    color: #fff !important;
+}
+
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner td {
+    background-color: #303030 !important;
+    border-color: #444 !important;
+}
+
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner th {
+    background-color: #1a1a2e !important;
+    border-color: #444 !important;
+    color: #fff !important;
+    font-weight: bold;
+}
+
+/* Allow conditional styles to override base cell styles */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner td.dash-cell {
+    background-color: inherit !important;
+}
+
+/* Card styling */
+.card {
+    border: 1px solid #444;
+}
+
+/* Loading spinner color */
+._dash-loading {
+    color: #375a7f !important;
+}
+
+/* Scrollable table containers */
+.table-responsive {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+/* Company description scrollbar styling */
+.card-body div[style*="overflowY"] {
+    scrollbar-width: thin;
+    scrollbar-color: #555 #222;
+}
+
+.card-body div[style*="overflowY"]::-webkit-scrollbar {
+    width: 6px;
+}
+
+.card-body div[style*="overflowY"]::-webkit-scrollbar-track {
+    background: #222;
+}
+
+.card-body div[style*="overflowY"]::-webkit-scrollbar-thumb {
+    background-color: #555;
+    border-radius: 3px;
+}
+
+/* Badge spacing in analyst and dividend sections */
+.badge {
+    font-weight: 500;
+}
+
+/* Responsive adjustments for options tables side by side */
+@media (max-width: 991px) {
+    .dash-table-container {
+        font-size: 11px;
+    }
+}
+
+/* Highlight animation for fetched data */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.card {
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+/* DataTable sort icon visibility on dark theme */
+.dash-table-container .column-header--sort {
+    color: #fff !important;
+}
+
+/* =============================================================================
+   LOADING STATE STYLES
+   ============================================================================= */
+
+/* Dim content while loading */
+.dash-loading-callback {
+    opacity: 0.3;
+    transition: opacity 0.2s ease;
+}
+
+/* Loading overlay background */
+._dash-loading-callback--is-loading {
+    position: relative;
+}
+
+/* Spinner positioning */
+.dash-spinner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 100;
+}
+
+/* Disabled button style during fetch */
+#submit-button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    background-color: #555;
+    border-color: #555;
+}
+
+/* Pulse animation for the "Fetching..." button text */
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+#submit-button:disabled {
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* Ensure loading spinners are visible on dark background */
+.dash-default-spinner {
+    filter: brightness(1.5);
+}
+
+/* Smooth transition when content appears after loading */
+#company-summary-content,
+#company-description-content,
+#analyst-ratings-content,
+#filtered-options-content,
+#full-options-content,
+#full-profile-content,
+#earnings-content,
+#dividends-content,
+#financials-content,
+#insider-content {
+    transition: opacity 0.3s ease-in-out;
+}
