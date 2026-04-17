@@ -18,3 +18,10 @@ build/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/launch.json
+
+#env
+.env
+#tests
+/tests/*
+
+requirements_full.txt

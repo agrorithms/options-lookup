@@ -1,103 +1,153 @@
-/* Custom styles for Stock Dashboard */
+/* =============================================================================
+   STOCK DASHBOARD — MASTER STYLESHEET
+   ============================================================================= */
 
-/* Smooth font rendering */
+/* =============================================================================
+   BASE / GLOBAL
+   ============================================================================= */
+
 body {
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    /* Removed -webkit-font-smoothing: antialiased as it overrides OS-level
+       subpixel rendering and can make text appear thinner/lighter than intended.
+       Let the OS and browser handle font rendering optimally. */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
 }
 
-/* Ticker input uppercase */
+/* Prevent horizontal overflow on the entire page */
+html,
+body {
+    overflow-x: hidden;
+}
+
+/* =============================================================================
+   TICKER INPUT
+   ============================================================================= */
+
 #ticker-input {
     text-transform: uppercase;
     font-weight: bold;
     font-size: 1.1rem;
     letter-spacing: 1px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-/* Chart container */
-#candlestick-chart {
-    border-radius: 8px;
+#ticker-input:focus {
+    border-color: #375a7f !important;
+    box-shadow: 0 0 0 3px rgba(55, 90, 127, 0.35);
+    outline: none;
 }
 
-/* Tab content padding */
-.tab-content {
-    padding-top: 1rem;
+#ticker-input::placeholder {
+    color: #666;
+    font-weight: normal;
+    letter-spacing: normal;
 }
 
-/* DataTable overrides for dark theme */
-.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table {
-    color: #fff !important;
+/* =============================================================================
+   SUBMIT BUTTON
+   ============================================================================= */
+
+#submit-button {
+    transition: background-color 0.2s ease, transform 0.1s ease;
 }
 
-.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner td {
-    background-color: #303030 !important;
-    border-color: #444 !important;
+#submit-button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(55, 90, 127, 0.4);
 }
 
-.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner th {
-    background-color: #1a1a2e !important;
-    border-color: #444 !important;
-    color: #fff !important;
-    font-weight: bold;
+#submit-button:active:not(:disabled) {
+    transform: translateY(0);
 }
 
-/* Allow conditional styles to override base cell styles */
-.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner td.dash-cell {
-    background-color: inherit !important;
-}
-
-/* Card styling */
-.card {
-    border: 1px solid #444;
-}
-
-/* Loading spinner color */
-._dash-loading {
-    color: #375a7f !important;
-}
-
-/* Scrollable table containers */
-.table-responsive {
-    max-height: 500px;
-    overflow-y: auto;
-}
-
-/* Company description scrollbar styling */
-.card-body div[style*="overflowY"] {
-    scrollbar-width: thin;
-    scrollbar-color: #555 #222;
-}
-
-.card-body div[style*="overflowY"]::-webkit-scrollbar {
-    width: 6px;
-}
-
-.card-body div[style*="overflowY"]::-webkit-scrollbar-track {
-    background: #222;
-}
-
-.card-body div[style*="overflowY"]::-webkit-scrollbar-thumb {
+#submit-button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
     background-color: #555;
-    border-radius: 3px;
+    border-color: #555;
+    animation: pulse 1.5s ease-in-out infinite;
 }
 
-/* Badge spacing in analyst and dividend sections */
-.badge {
-    font-weight: 500;
-}
+@keyframes pulse {
 
-/* Responsive adjustments for options tables side by side */
-@media (max-width: 991px) {
-    .dash-table-container {
-        font-size: 11px;
+    0%,
+    100% {
+        opacity: 0.7;
+    }
+
+    50% {
+        opacity: 0.4;
     }
 }
 
-/* Highlight animation for fetched data */
+/* =============================================================================
+   CHART
+   ============================================================================= */
+
+#candlestick-chart {
+    border-radius: 6px;
+}
+
+/* Analyst rec chart — remove extra padding */
+#analyst-rec-chart {
+    border-radius: 6px;
+}
+
+/* Period/interval button groups — tighter spacing */
+.btn-group .btn-sm {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+/* =============================================================================
+   COMPANY SIDEBAR (left of chart)
+   ============================================================================= */
+
+#company-sidebar-content {
+    scrollbar-width: thin;
+    scrollbar-color: #555 transparent;
+}
+
+#company-sidebar-content::-webkit-scrollbar {
+    width: 4px;
+}
+
+#company-sidebar-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#company-sidebar-content::-webkit-scrollbar-thumb {
+    background-color: #555;
+    border-radius: 2px;
+}
+
+/* =============================================================================
+   CARDS
+   ============================================================================= */
+
+.card {
+    border: 1px solid #444;
+    border-radius: 8px;
+    animation: fadeIn 0.3s ease-in-out;
+    transition: border-color 0.2s ease;
+}
+
+.card:hover {
+    border-color: #555;
+}
+
+/* Tighter card body padding for dense data */
+.card-body {
+    padding: 1rem;
+}
+
 @keyframes fadeIn {
     from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(8px);
     }
 
     to {
@@ -106,17 +156,143 @@ body {
     }
 }
 
-.card {
-    animation: fadeIn 0.3s ease-in-out;
+/* =============================================================================
+   TABS
+   ============================================================================= */
+
+.tab-content {
+    padding-top: 1rem;
 }
 
-/* DataTable sort icon visibility on dark theme */
+/* Style the tab buttons for dark theme */
+.nav-tabs .nav-link {
+    color: #888;
+    border: none;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.nav-tabs .nav-link:hover {
+    color: #ccc;
+    border-bottom: 2px solid #555;
+}
+
+.nav-tabs .nav-link.active {
+    color: #fff;
+    background-color: transparent;
+    border-bottom: 2px solid #375a7f;
+}
+
+/* =============================================================================
+   DATATABLES — DARK THEME OVERRIDES
+   ============================================================================= */
+
+/* Base table text */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table {
+    color: #fff !important;
+}
+
+/* Cell styling */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner td {
+    background-color: #303030 !important;
+    border-color: #444 !important;
+}
+
+/* Header styling */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner th {
+    background-color: #1a1a2e !important;
+    border-color: #444 !important;
+    color: #fff !important;
+    font-weight: bold;
+}
+
+/* CRITICAL: Allow conditional styles to override base cell background.
+   Without this, the !important on td background blocks all highlights. */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner td.dash-cell {
+    background-color: inherit !important;
+}
+
+/* Sort icon visibility on dark theme */
 .dash-table-container .column-header--sort {
     color: #fff !important;
 }
 
+/* Hover effect on table rows */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner tr:hover td {
+    filter: brightness(1.15);
+}
+
+/* Fixed header shadow for scrollable tables */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner thead th {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
 /* =============================================================================
-   LOADING STATE STYLES
+   SCROLLBARS — GLOBAL DARK THEME
+   ============================================================================= */
+
+/* Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #555 #222;
+}
+
+/* Webkit (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: #222;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: #555;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: #777;
+}
+
+/* =============================================================================
+   BADGES
+   ============================================================================= */
+
+.badge {
+    font-weight: 500;
+    transition: transform 0.15s ease;
+}
+
+.badge:hover {
+    transform: scale(1.05);
+}
+
+/* =============================================================================
+   ERROR ALERT
+   ============================================================================= */
+
+.alert-danger {
+    border-left: 4px solid #ef5350;
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* =============================================================================
+   LOADING STATES
    ============================================================================= */
 
 /* Dim content while loading */
@@ -125,7 +301,7 @@ body {
     transition: opacity 0.2s ease;
 }
 
-/* Loading overlay background */
+/* Loading overlay */
 ._dash-loading-callback--is-loading {
     position: relative;
 }
@@ -139,41 +315,17 @@ body {
     z-index: 100;
 }
 
-/* Disabled button style during fetch */
-#submit-button:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-    background-color: #555;
-    border-color: #555;
-}
-
-/* Pulse animation for the "Fetching..." button text */
-@keyframes pulse {
-
-    0%,
-    100% {
-        opacity: 1;
-    }
-
-    50% {
-        opacity: 0.5;
-    }
-}
-
-#submit-button:disabled {
-    animation: pulse 1.5s ease-in-out infinite;
-}
-
 /* Ensure loading spinners are visible on dark background */
 .dash-default-spinner {
     filter: brightness(1.5);
 }
 
 /* Smooth transition when content appears after loading */
-#company-summary-content,
+#company-sidebar-content,
 #company-description-content,
 #analyst-ratings-content,
 #filtered-options-content,
+#high-premium-options-content,
 #full-options-content,
 #full-profile-content,
 #earnings-content,
@@ -181,4 +333,95 @@ body {
 #financials-content,
 #insider-content {
     transition: opacity 0.3s ease-in-out;
+}
+
+/* =============================================================================
+   RESPONSIVE ADJUSTMENTS
+   ============================================================================= */
+
+/* Small screens: tighten table font size */
+@media (max-width: 991px) {
+    .dash-table-container {
+        font-size: 11px;
+    }
+
+    /* Stack the chart row vertically */
+    #company-sidebar-content {
+        max-height: 200px !important;
+        border-right: none !important;
+        border-bottom: 1px solid #444;
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.5rem;
+    }
+
+    /* Reduce card padding on mobile */
+    .card-body {
+        padding: 0.75rem;
+    }
+
+    /* Smaller badges on mobile */
+    .badge {
+        font-size: 0.75rem !important;
+        padding: 0.3rem 0.6rem !important;
+    }
+}
+
+/* Extra small screens */
+@media (max-width: 576px) {
+    .dash-table-container {
+        font-size: 10px;
+    }
+
+    .btn-group .btn-sm {
+        padding: 0.15rem 0.35rem;
+        font-size: 0.65rem;
+    }
+
+    /* Reduce chart height on mobile */
+    #candlestick-chart {
+        height: 300px !important;
+    }
+
+    #analyst-rec-chart {
+        height: 250px !important;
+    }
+}
+
+/* =============================================================================
+   NAVBAR
+   ============================================================================= */
+
+.navbar {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* =============================================================================
+   SELECTION / HIGHLIGHT COLOR
+   ============================================================================= */
+
+::selection {
+    background-color: rgba(55, 90, 127, 0.5);
+    color: #fff;
+}
+
+/* =============================================================================
+   PRINT STYLES (if someone prints the dashboard)
+   ============================================================================= */
+
+@media print {
+    body {
+        background: #fff !important;
+        color: #000 !important;
+    }
+
+    .card {
+        border: 1px solid #ccc !important;
+        box-shadow: none !important;
+    }
+
+    .navbar,
+    #submit-button,
+    .btn-group {
+        display: none !important;
+    }
 }

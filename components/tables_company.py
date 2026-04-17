@@ -165,6 +165,7 @@ def build_company_info_sidebar(profile_data, all_data):
     info_items = [
         ("Price", f"${price}" if price != "N/A" else "N/A", "fs-4 fw-bold text-success"),
         ("Change", change_str or "N/A", f"small {change_class}"),
+        ("Next Earnings", p.get("nextEarningsDate", "N/A"), "small"),
         ("Mkt Cap", market_cap_str, "small"),
         ("52W High", f"${p.get('fiftyTwoWeekHigh', 'N/A')}", "small"),
         ("52W Low", f"${p.get('fiftyTwoWeekLow', 'N/A')}", "small"),

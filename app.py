@@ -1,4 +1,7 @@
 import dash
+import time
+import json
+import sys
 import dash_bootstrap_components as dbc
 from dash import html, dcc, Input, Output, State, callback, no_update, ctx
 from components.layout import create_layout
@@ -157,6 +160,11 @@ def master_fetch_callback(n_clicks, n_submit, url_trigger, ticker_symbol, period
             "Fetch Data",
         )
 
+    # Measure payload size
+    #payload_json = json.dumps(all_data)
+    #payload_size_kb = len(payload_json.encode('utf-8')) / 1024
+    #print(f"  dcc.Store payload: {payload_size_kb:.1f} KB")
+
     return all_data, None, False, "Fetch Data"
 
 # =============================================================================
@@ -231,6 +239,7 @@ def update_interval_selection(*args):
 )
 def update_chart(all_data, period, interval):
     """Build the candlestick chart. Re-fetches historical data if period/interval changed."""
+    #start = time.time()
     if not all_data:
         return _empty_chart()
 
@@ -248,8 +257,9 @@ def update_chart(all_data, period, interval):
         stored_interval = historical.get("interval", "1wk")
         if stored_period != period or stored_interval != interval:
             historical = fetch_historical_data(ticker, period=period, interval=interval)
-
-    return build_candlestick_chart(historical, ticker, period, interval)
+    result = build_candlestick_chart(historical, ticker, period, interval)
+    #print(f"Chart updated in {time.time() - start:.3f} seconds")
+    return result
 
 
 def _empty_chart():
@@ -502,5 +512,8 @@ def update_insider(all_data):
 # =============================================================================
 # RUN THE APP
 # =============================================================================
+# Expose the Flask server for gunicorn
+server = app.server
+
 if __name__ == "__main__":
     app.run(debug=True, port=8050)

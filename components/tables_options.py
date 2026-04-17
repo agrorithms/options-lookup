@@ -31,6 +31,66 @@ def add_ivr_ivp(records, ticker_symbol, iv_col="impliedVolatility"):
     return new_records
 
 
+def _build_options_header(title_text, exp_date, days_to_exp, current_price, options_data):
+    """Build the common options section header with an earnings badge."""
+    data = options_data.get("data", {}) if options_data else {}
+    next_earnings_date = data.get("next_earnings_date")
+    earnings_before_expiration = data.get("earnings_before_expiration")
+    next_earnings_days = data.get("next_earnings_days")
+
+    if not next_earnings_date or next_earnings_date == "N/A":
+        badge_text = "Next earnings: N/A"
+        badge_color = "secondary"
+    elif earnings_before_expiration:
+        if next_earnings_days is not None:
+            badge_text = (
+                f"Next earnings: {next_earnings_date} (in {next_earnings_days}d, before expiry)"
+            )
+        else:
+            badge_text = f"Next earnings: {next_earnings_date} (before expiry)"
+        badge_color = "warning"
+    else:
+        if next_earnings_days is not None:
+            badge_text = (
+                f"Next earnings: {next_earnings_date} (in {next_earnings_days}d, after expiry)"
+            )
+        else:
+            badge_text = f"Next earnings: {next_earnings_date} (after expiry)"
+        badge_color = "info"
+
+    return dbc.Row(
+        [
+            dbc.Col(
+                html.Div(
+                    [
+                        html.H5(
+                            f"{title_text} — Exp: {exp_date} ({days_to_exp}d)",
+                            className="mb-1",
+                        ),
+                        dbc.Badge(
+                            badge_text,
+                            color=badge_color,
+                            pill=True,
+                            className="align-self-start",
+                        ),
+                    ],
+                    className="d-flex flex-column",
+                ),
+                md=8,
+            ),
+            dbc.Col(
+                html.Span(
+                    f"Stock: ${current_price:.2f}",
+                    className="text-success fw-bold fs-5",
+                ),
+                md=4,
+                className="text-end",
+            ),
+        ],
+        className="mb-2 align-items-center",
+    )
+
+
 def build_high_premium_options_section(options_data):
     """
     Build the top-of-page options section showing only OTM options
@@ -56,26 +116,12 @@ def build_high_premium_options_section(options_data):
 
     filtered_calls = _filter_high_premium(calls_records, threshold=0.06)
     filtered_puts = _filter_high_premium(puts_records, threshold=0.06)
-
-    header = dbc.Row(
-        [
-            dbc.Col(
-                html.H5(
-                    f"High Premium Options (≥6%) — Exp: {exp_date} ({days_to_exp}d)",
-                    className="mb-0",
-                ),
-                md=8,
-            ),
-            dbc.Col(
-                html.Span(
-                    f"Stock: ${current_price:.2f}",
-                    className="text-success fw-bold fs-5",
-                ),
-                md=4,
-                className="text-end",
-            ),
-        ],
-        className="mb-2 align-items-center",
+    header = _build_options_header(
+        "High Premium Options (≥6%)",
+        exp_date,
+        days_to_exp,
+        current_price,
+        options_data,
     )
 
     ticker_symbol = options_data.get("ticker") if options_data else None
@@ -154,26 +200,12 @@ def build_filtered_options_section(options_data):
     days_to_exp = data.get("days_to_expiration", "N/A")
     num_otm_calls = data.get("num_otm_calls", 0)
     num_otm_puts = data.get("num_otm_puts", 0)
-
-    header = dbc.Row(
-        [
-            dbc.Col(
-                html.H5(
-                    f"Options Chain — Exp: {exp_date} ({days_to_exp}d)",
-                    className="mb-0",
-                ),
-                md=8,
-            ),
-            dbc.Col(
-                html.Span(
-                    f"Stock: ${current_price:.2f}",
-                    className="text-success fw-bold fs-5",
-                ),
-                md=4,
-                className="text-end",
-            ),
-        ],
-        className="mb-2 align-items-center",
+    header = _build_options_header(
+        "Options Chain",
+        exp_date,
+        days_to_exp,
+        current_price,
+        options_data,
     )
 
     ticker_symbol = options_data.get("ticker") if options_data else None
@@ -226,12 +258,22 @@ def build_unfiltered_options_section(options_data):
     data = options_data["data"]
 
     ticker_symbol = options_data.get("ticker") if options_data else None
+    current_price = data.get("current_price", 0)
+    exp_date = data.get("expiration_date", "N/A")
+    days_to_exp = data.get("days_to_expiration", "N/A")
     return html.Div(
         [
             html.P(
                 "Showing filtered options (1 ITM + OTM). "
                 "Full unfiltered chain can be added as a future enhancement.",
                 className="text-muted mb-2",
+            ),
+            _build_options_header(
+                "Full Options Chain",
+                exp_date,
+                days_to_exp,
+                current_price,
+                options_data,
             ),
             dbc.Row(
                 [

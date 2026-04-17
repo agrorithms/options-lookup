@@ -1,8 +1,7 @@
-dash
-dash-bootstrap-components
-plotly
-yfinance
-pandas
-numpy
-gunicorn
-flask-caching
+dash>=4.1.0
+dash-bootstrap-components>=2.0.4
+gunicorn==23.0.0
+numpy>=2.0.2
+pandas>=2.3.3
+plotly>=6.7.0
+yfinance>=1.2.0

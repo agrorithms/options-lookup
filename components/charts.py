@@ -1,6 +1,7 @@
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
+import numpy as np
 
 
 def build_candlestick_chart(historical_data, ticker_symbol, period, interval):
@@ -20,94 +21,77 @@ def build_candlestick_chart(historical_data, ticker_symbol, period, interval):
         return _build_error_figure("No historical data records found.")
 
     df = pd.DataFrame(records)
-    # Ensure Date is datetime
     df["Date"] = pd.to_datetime(df["Date"])
 
-    # Helper: convert period string to pandas DateOffset (approximate)
+    # -----------------------------------------------------------------
+    # Compute visible date range
+    # -----------------------------------------------------------------
     def _period_to_offset(p):
-        if p == "1d":
-            return pd.DateOffset(days=1)
-        if p == "5d":
-            return pd.DateOffset(days=5)
-        if p == "1mo":
-            return pd.DateOffset(months=1)
-        if p == "3mo":
-            return pd.DateOffset(months=3)
-        if p == "6mo":
-            return pd.DateOffset(months=6)
-        if p == "1y":
-            return pd.DateOffset(years=1)
-        if p == "2y":
-            return pd.DateOffset(years=2)
-        if p == "5y":
-            return pd.DateOffset(years=5)
-        if p == "10y":
-            return pd.DateOffset(years=10)
-        return None
+        offsets = {
+            "1d": pd.DateOffset(days=1),
+            "5d": pd.DateOffset(days=5),
+            "1mo": pd.DateOffset(months=1),
+            "3mo": pd.DateOffset(months=3),
+            "6mo": pd.DateOffset(months=6),
+            "1y": pd.DateOffset(years=1),
+            "2y": pd.DateOffset(years=2),
+            "5y": pd.DateOffset(years=5),
+            "10y": pd.DateOffset(years=10),
+        }
+        return offsets.get(p)
 
     visible_end = df["Date"].max()
     period_offset = _period_to_offset(period)
-    if period_offset is not None:
-        visible_start = visible_end - period_offset
-    else:
-        visible_start = df["Date"].min()
+    visible_start = (visible_end - period_offset) if period_offset else df["Date"].min()
 
-    visible_mask = df["Date"] >= visible_start
-    df_visible = df.loc[visible_mask].copy()
+    df_visible = df.loc[df["Date"] >= visible_start].copy()
 
+    # -----------------------------------------------------------------
+    # Downsampling: only for very large datasets, and more generous limit
+    # 1260 candles (5Y daily) renders fine; only cap extreme cases
+    # -----------------------------------------------------------------
+    max_candles = 1500
+    if len(df_visible) > max_candles:
+        step = len(df_visible) // max_candles + 1
+        df_visible = df_visible.iloc[::step].reset_index(drop=True)
+
+    # -----------------------------------------------------------------
+    # Extract numpy arrays once
+    # -----------------------------------------------------------------
+    dates = df_visible["Date"].values
+    opens = df_visible["Open"].values
+    highs = df_visible["High"].values
+    lows = df_visible["Low"].values
+    closes = df_visible["Close"].values
+    volumes = df_visible["Volume"].values
+
+    # -----------------------------------------------------------------
+    # Vectorized volume colors
+    # -----------------------------------------------------------------
+    volume_colors = np.where(closes >= opens, "#26a69a", "#ef5350").tolist()
+
+    # -----------------------------------------------------------------
+    # Build figure
+    # -----------------------------------------------------------------
     fig = make_subplots(
         rows=2,
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.04,
-        row_heights=[0.75, 0.25],
-        subplot_titles=None,
+        row_heights=[0.85, 0.15],
     )
 
-    # Vertical wick overlay drawn as separate thin grey lines (use None separators)
-    wick_x = []
-    wick_y = []
-    for _, r in df_visible.iterrows():
-        wick_x.extend([r["Date"], r["Date"], None])
-        wick_y.extend([r["Low"], r["High"], None])
-
-    # Build wick segments only where wick extends beyond the candle body
-    wick_x = []
-    wick_y = []
-    for _, r in df_visible.iterrows():
-        top_body = max(r["Open"], r["Close"])
-        bottom_body = min(r["Open"], r["Close"])
-        # upper wick (top of body -> high)
-        if r["High"] > top_body:
-            wick_x.extend([r["Date"], r["Date"], None])
-            wick_y.extend([top_body, r["High"], None])
-        # lower wick (low -> bottom of body)
-        if r["Low"] < bottom_body:
-            wick_x.extend([r["Date"], r["Date"], None])
-            wick_y.extend([r["Low"], bottom_body, None])
-
-    # Draw wick lines (only the portions outside the candle body)
-    fig.add_trace(
-        go.Scatter(
-            x=wick_x,
-            y=wick_y,
-            mode="lines",
-            line=dict(color="#bdbdbd", width=1),
-            showlegend=False,
-            hoverinfo="skip",
-        ),
-        row=1,
-        col=1,
-    )
-
-    # Draw candlestick bodies with transparent line color so they don't draw their own wicks
+    # -----------------------------------------------------------------
+    # Candlestick bodies FIRST (transparent wicks)
+    # Drawing this first establishes the x-position for each date.
+    # -----------------------------------------------------------------
     fig.add_trace(
         go.Candlestick(
-            x=df_visible["Date"],
-            open=df_visible["Open"],
-            high=df_visible["High"],
-            low=df_visible["Low"],
-            close=df_visible["Close"],
+            x=dates,
+            open=opens,
+            high=highs,
+            low=lows,
+            close=closes,
             name="OHLC",
             increasing_line_color="rgba(0,0,0,0)",
             increasing_fillcolor="#26a69a",
@@ -119,121 +103,164 @@ def build_candlestick_chart(historical_data, ticker_symbol, period, interval):
         col=1,
     )
 
-    bb_df = df.dropna(subset=["SMA", "Upper_BB", "Lower_BB"])
-    # Only plot BB lines for the visible range but compute using padded data (bb_df is from full df)
-    if not bb_df.empty:
-        bb_visible = bb_df.loc[bb_df["Date"] >= visible_start]
-        if not bb_visible.empty:
-            fig.add_trace(
-                go.Scatter(
-                    x=bb_visible["Date"],
-                    y=bb_visible["SMA"],
-                    name="SMA (20)",
-                    line=dict(color="#2196F3", width=1.2),
-                    hovertemplate="SMA: %{y:.2f}<extra></extra>",
-                ),
-                row=1,
-                col=1,
-            )
+    # -----------------------------------------------------------------
+    # Grey wick lines AFTER candlestick, using the SAME date values
+    # This ensures perfect x-alignment since both traces share
+    # identical x-coordinates from the same numpy array.
+    # -----------------------------------------------------------------
+    top_body = np.maximum(opens, closes)
+    bottom_body = np.minimum(opens, closes)
 
-            fig.add_trace(
-                go.Scatter(
-                    x=bb_visible["Date"],
-                    y=bb_visible["Upper_BB"],
-                    name="Upper BB (+2σ)",
-                    line=dict(color="#FF9800", width=1),
-                    hovertemplate="Upper BB: %{y:.2f}<extra></extra>",
-                ),
-                row=1,
-                col=1,
-            )
+    # Build all wick segments in one pass using numpy
+    # Each wick needs: [date, date, None] for x and [start, end, None] for y
+    upper_mask = highs > top_body
+    lower_mask = lows < bottom_body
 
-            fig.add_trace(
-                go.Scatter(
-                    x=bb_visible["Date"],
-                    y=bb_visible["Lower_BB"],
-                    name="Lower BB (−2σ)",
-                    line=dict(color="#FF9800", width=1),
-                    fill="tonexty",
-                    fillcolor="rgba(255, 152, 0, 0.08)",
-                    hovertemplate="Lower BB: %{y:.2f}<extra></extra>",
-                ),
-                row=1,
-                col=1,
-            )
+    wick_x = []
+    wick_y = []
 
-    volume_colors = [
-        "#26a69a" if row["Close"] >= row["Open"] else "#ef5350"
-        for _, row in df_visible.iterrows()
-    ]
+    # Upper wicks
+    if upper_mask.any():
+        u_dates = dates[upper_mask]
+        u_tops = top_body[upper_mask]
+        u_highs = highs[upper_mask]
+        for i in range(len(u_dates)):
+            wick_x.extend([u_dates[i], u_dates[i], None])
+            wick_y.extend([u_tops[i], u_highs[i], None])
 
+    # Lower wicks
+    if lower_mask.any():
+        l_dates = dates[lower_mask]
+        l_bottoms = bottom_body[lower_mask]
+        l_lows = lows[lower_mask]
+        for i in range(len(l_dates)):
+            wick_x.extend([l_dates[i], l_dates[i], None])
+            wick_y.extend([l_lows[i], l_bottoms[i], None])
+
+    if wick_x:
+        fig.add_trace(
+            go.Scatter(
+                x=wick_x,
+                y=wick_y,
+                mode="lines",
+                line=dict(color="#bdbdbd", width=1),
+                showlegend=False,
+                hoverinfo="skip",
+            ),
+            row=1,
+            col=1,
+        )
+
+    # -----------------------------------------------------------------
+    # Bollinger Bands — go.Scatter (SVG) for rangebreaks compatibility
+    # -----------------------------------------------------------------
+    bb_mask = df["SMA"].notna() & df["Upper_BB"].notna() & df["Lower_BB"].notna()
+    bb_mask = bb_mask & (df["Date"] >= visible_start)
+    if bb_mask.any():
+        bb_dates = df.loc[bb_mask, "Date"].values
+        bb_sma = df.loc[bb_mask, "SMA"].values
+        bb_upper = df.loc[bb_mask, "Upper_BB"].values
+        bb_lower = df.loc[bb_mask, "Lower_BB"].values
+
+        fig.add_trace(
+            go.Scatter(
+                x=bb_dates, y=bb_upper,
+                name="Upper BB",
+                mode="lines",
+                line=dict(color="#FF9800", width=1),
+                hovertemplate="Upper BB: %{y:$.2f}<extra></extra>",
+            ),
+            row=1, col=1,
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=bb_dates, y=bb_lower,
+                name="Lower BB",
+                mode="lines",
+                line=dict(color="#FF9800", width=1),
+                fill="tonexty",
+                fillcolor="rgba(255, 152, 0, 0.08)",
+                hovertemplate="Lower BB: %{y:$.2f}<extra></extra>",
+            ),
+            row=1, col=1,
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=bb_dates, y=bb_sma,
+                name="SMA (20)",
+                mode="lines",
+                line=dict(color="#2196F3", width=1.2),
+                hovertemplate="SMA(20): %{y:$.2f}<extra></extra>",
+            ),
+            row=1, col=1,
+        )
+
+    # -----------------------------------------------------------------
+    # Volume bars
+    # -----------------------------------------------------------------
     fig.add_trace(
         go.Bar(
-            x=df_visible["Date"],
-            y=df_visible["Volume"],
+            x=dates,
+            y=volumes,
             name="Volume",
             marker_color=volume_colors,
             opacity=0.7,
-            hovertemplate="Volume: %{y:,.0f}<extra></extra>",
+            hovertemplate="Vol: %{y:,.0f}<extra></extra>",
         ),
         row=2,
         col=1,
     )
 
-    # Earnings markers: use earnings_dates from the historical payload if available
+    # -----------------------------------------------------------------
+    # Earnings markers — batched into single trace
+    # -----------------------------------------------------------------
     earnings = historical_data.get("earnings_dates") or []
-
-    def _extract_date(rec):
-        # Try common keys or parse any value that looks like a date
-        for k, v in rec.items():
-            try:
-                dt = pd.to_datetime(v, errors="coerce")
-                if not pd.isna(dt):
-                    return dt
-            except Exception:
-                continue
-        return None
-
     if earnings:
-        # Compute placement: slightly below visible low
-        try:
-            vis_low = df_visible["Low"].min()
-            vis_high = df_visible["High"].max()
-            price_range = max(1e-6, vis_high - vis_low)
-            marker_y = vis_low - 0.02 * price_range
-        except Exception:
-            marker_y = None
+        vis_low = lows.min()
+        vis_high = highs.max()
+        price_range = max(1e-6, vis_high - vis_low)
+        marker_y_val = vis_low - 0.02 * price_range
+
+        earnings_x = []
+        earnings_y = []
+        earnings_hover = []
 
         for rec in earnings:
-            ed = _extract_date(rec)
+            ed = _extract_earnings_date(rec)
             if ed is None:
                 continue
-            # if ed is within visible range, add marker
             if ed >= visible_start and ed <= visible_end:
-                hover = []
-                for k, v in rec.items():
-                    hover.append(f"{k}: {v}")
-                hovertext = "<br>".join(hover)
-                y_val = marker_y if marker_y is not None else df_visible["Low"].min()
-                fig.add_trace(
-                    go.Scatter(
-                        x=[ed],
-                        y=[y_val],
-                        mode="markers",
-                        marker=dict(symbol="triangle-down", size=10, color="#ffb74d"),
-                        name="Earnings",
-                        hoverinfo="text",
-                        hovertext=hovertext,
-                        showlegend=False,
-                    ),
-                    row=1,
-                    col=1,
-                )
+                earnings_x.append(ed)
+                earnings_y.append(marker_y_val)
+                hover_parts = [f"{k}: {v}" for k, v in rec.items()]
+                earnings_hover.append("<br>".join(hover_parts))
 
+        if earnings_x:
+            fig.add_trace(
+                go.Scatter(
+                    x=earnings_x,
+                    y=earnings_y,
+                    mode="markers",
+                    marker=dict(symbol="triangle-down", size=10, color="#ffb74d"),
+                    name="Earnings",
+                    hoverinfo="text",
+                    hovertext=earnings_hover,
+                    showlegend=False,
+                ),
+                row=1,
+                col=1,
+            )
+
+    # -----------------------------------------------------------------
+    # Layout
+    # -----------------------------------------------------------------
     interval_labels = {
         "1m": "1 Min", "2m": "2 Min", "5m": "5 Min", "15m": "15 Min",
         "30m": "30 Min", "60m": "1 Hour", "1h": "1 Hour", "90m": "90 Min",
-        "1d": "Daily", "5d": "5 Day", "1wk": "Weekly", "1mo": "Monthly", "3mo": "Quarterly",
+        "1d": "Daily", "5d": "5 Day", "1wk": "Weekly", "1mo": "Monthly",
+        "3mo": "Quarterly",
     }
     period_labels = {
         "1d": "1 Day", "5d": "5 Days", "1mo": "1 Month", "3mo": "3 Months",
@@ -241,16 +268,11 @@ def build_candlestick_chart(historical_data, ticker_symbol, period, interval):
         "10y": "10 Years", "ytd": "YTD", "max": "Max",
     }
 
-    interval_label = interval_labels.get(interval, interval)
-    period_label = period_labels.get(period, period)
-
     fig.update_layout(
         title=dict(
-            text=f"{ticker_symbol} · {interval_label} · {period_label} · BB(20,2)",
+            text=f"{ticker_symbol} · {interval_labels.get(interval, interval)} · {period_labels.get(period, period)} · BB(20,2)",
             font=dict(size=12),
-            x=0.5,
-            xanchor="center",
-            y=0.98,
+            x=0.5, xanchor="center", y=0.98,
         ),
         template="plotly_dark",
         paper_bgcolor="#222",
@@ -262,13 +284,54 @@ def build_candlestick_chart(historical_data, ticker_symbol, period, interval):
         xaxis_rangeslider_visible=False,
     )
 
-    # Enable solid spikes for crosshair (both axes)
-    fig.update_yaxes(title_text="Price", title_font_size=10, tickfont_size=9, row=1, col=1, gridcolor="#333", showspikes=True, spikecolor="#888", spikethickness=1, spikedash="solid", spikemode="across", spikesnap='cursor')
-    fig.update_yaxes(title_text="Vol", title_font_size=9, tickfont_size=8, row=2, col=1, gridcolor="#333", showspikes=True, spikecolor="#888", spikethickness=1, spikedash="solid", spikemode="across", spikesnap='cursor')
-    fig.update_xaxes(gridcolor="#333", tickfont_size=9, row=1, col=1, showspikes=True, spikecolor="#888", spikethickness=1, spikedash="solid", spikemode="across", spikesnap='cursor')
-    fig.update_xaxes(gridcolor="#333", tickfont_size=9, row=2, col=1, showspikes=True, spikecolor="#888", spikethickness=1, spikedash="solid", spikemode="across", spikesnap='cursor')
+    # Spike crosshair config
+    spike_config = dict(
+        showspikes=True, spikecolor="#888", spikethickness=1,
+        spikedash="solid", spikemode="across", spikesnap="cursor",
+    )
+
+    # Weekend breaks — only apply for daily or sub-daily intervals
+    # Weekly and monthly candles don't have weekend gaps
+    intraday_or_daily = interval in ("1m", "2m", "5m", "15m", "30m", "60m", "1h", "90m", "1d")
+    weekend_breaks = {}
+    if intraday_or_daily:
+        weekend_breaks = dict(
+            rangebreaks=[
+                dict(bounds=["sat", "mon"]),
+            ]
+        )
+
+    fig.update_yaxes(
+        title_text="Price", title_font_size=10, tickfont_size=9,
+        gridcolor="#333", row=1, col=1, **spike_config,
+    )
+    fig.update_yaxes(
+        title_text="Vol", title_font_size=9, tickfont_size=8,
+        gridcolor="#333", row=2, col=1, **spike_config,
+    )
+    fig.update_xaxes(
+        gridcolor="#333", tickfont_size=9,
+        row=1, col=1, **spike_config, **weekend_breaks,
+    )
+    fig.update_xaxes(
+        gridcolor="#333", tickfont_size=9,
+        row=2, col=1, **spike_config, **weekend_breaks,
+    )
 
     return fig
+
+
+
+def _extract_earnings_date(rec):
+    """Extract a datetime from an earnings record by trying all values."""
+    for k, v in rec.items():
+        try:
+            dt = pd.to_datetime(v, errors="coerce")
+            if not pd.isna(dt):
+                return dt
+        except Exception:
+            continue
+    return None
 
 
 def build_analyst_recommendation_chart(analyst_data):

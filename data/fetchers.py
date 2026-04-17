@@ -1,3 +1,102 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from functools import lru_cache
+import time
+import os
+
+DEBUG_TIMING = os.environ.get("DEBUG_TIMING", "false").lower() == "true"
+
+@lru_cache(maxsize=16)
+def _get_ticker_object(ticker_symbol):
+    """
+    Cache the yf.Ticker object to avoid re-instantiation.
+    Cache holds up to 16 tickers (most recent).
+    """
+    return yf.Ticker(ticker_symbol)
+
+
+@lru_cache(maxsize=16)
+def _get_ticker_info(ticker_symbol):
+    """
+    Cache ticker.info since multiple functions need it.
+    This avoids redundant API calls for the same data.
+    Cache expires naturally when maxsize is exceeded.
+    """
+    ticker = _get_ticker_object(ticker_symbol)
+    return ticker.info
+
+
+def fetch_all_data(ticker_symbol, period="5y", interval="1wk"):
+    """
+    Master function that fetches ALL data for a given ticker.
+    Uses ThreadPoolExecutor to run API calls in parallel.
+    """
+    start_total = time.time()
+
+    # Validate first (must be sequential — no point parallelizing if invalid)
+    validation = validate_ticker(ticker_symbol)
+    if not validation["valid"]:
+        return {"success": False, "error": validation["error"]}
+
+    # Define all fetch tasks
+    tasks = {
+        "profile": lambda: fetch_company_profile(ticker_symbol),
+        "historical": lambda: fetch_historical_data(ticker_symbol, period=period, interval=interval),
+        "options": lambda: fetch_option_chain(ticker_symbol),
+        "analyst": lambda: fetch_analyst_ratings(ticker_symbol),
+        "earnings": lambda: fetch_earnings_data(ticker_symbol),
+        "dividends": lambda: fetch_dividend_data(ticker_symbol),
+        "financials": lambda: fetch_financials(ticker_symbol),
+        "insider": lambda: fetch_insider_transactions(ticker_symbol),
+    }
+
+    results = {}
+    timings = {}
+
+    # Run all fetches in parallel (max 8 threads for 8 API calls)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        future_to_key = {}
+        for key, func in tasks.items():
+            future_to_key[executor.submit(func)] = (key, time.time())
+
+        for future in as_completed(future_to_key):
+            key, task_start = future_to_key[future]
+            try:
+                results[key] = future.result()
+                timings[key] = round(time.time() - task_start, 3)
+            except Exception as e:
+                results[key] = {"success": False, "error": str(e)}
+                timings[key] = round(time.time() - task_start, 3)
+
+    total_time = round(time.time() - start_total, 3)
+    timings["TOTAL"] = total_time
+    if DEBUG_TIMING:
+        # Print timing report to console
+        print(f"\n{'='*50}")
+        print(f"  PARALLEL FETCH TIMINGS FOR {ticker_symbol}")
+        print(f"{'='*50}")
+        for key, val in sorted(timings.items(), key=lambda x: x[1], reverse=True):
+            bar = "█" * int(val * 10)
+            print(f"  {key:<15} {val:>6.3f}s  {bar}")
+        print(f"{'='*50}\n")
+
+    all_data = {
+        "success": True,
+        "ticker": ticker_symbol.upper(),
+        "fetched_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+        "timings": timings,
+        "profile": results.get("profile", {"success": False, "error": "Not fetched"}),
+        "historical": results.get("historical", {"success": False, "error": "Not fetched"}),
+        "options": results.get("options", {"success": False, "error": "Not fetched"}),
+        "analyst": results.get("analyst", {"success": False, "error": "Not fetched"}),
+        "earnings": results.get("earnings", {"success": False, "error": "Not fetched"}),
+        "dividends": results.get("dividends", {"success": False, "error": "Not fetched"}),
+        "financials": results.get("financials", {"success": False, "error": "Not fetched"}),
+        "insider": results.get("insider", {"success": False, "error": "Not fetched"}),
+    }
+
+    return all_data
+
 def calculate_ivr_ivp(ticker_symbol, current_iv):
     """
     Calculate IV Rank (IVR) and IV Percentile (IVP) for a ticker, given today's IV.
@@ -48,7 +147,7 @@ def calculate_and_cache_hv30(ticker_symbol, force_refresh=False):
                 pass  # Fallback to recalc if cache is corrupt
 
     # Fetch 1 year of daily close prices
-    ticker = yf.Ticker(ticker_symbol)
+    ticker = _get_ticker_object(ticker_symbol)
     hist = ticker.history(period="1y", interval="1d")
     if hist is None or hist.empty or "Close" not in hist:
         return None
@@ -81,14 +180,115 @@ import numpy as np
 from datetime import datetime, timedelta
 
 
+def _to_date(value):
+    """Convert a calendar/earnings value into a Python date, if possible."""
+    if value is None:
+        return None
+
+    try:
+        ts = pd.to_datetime(value, errors="coerce")
+        if pd.isna(ts):
+            return None
+        if isinstance(ts, pd.Timestamp):
+            return ts.tz_localize(None).date() if ts.tzinfo else ts.date()
+        if hasattr(ts, "date"):
+            return ts.date()
+    except Exception:
+        return None
+
+    return None
+
+
+def _extract_date_candidates(value):
+    """Collect any date-like values from scalars, iterables, or DataFrames."""
+    candidates = []
+
+    if value is None:
+        return candidates
+
+    if isinstance(value, pd.DataFrame):
+        if isinstance(value.index, pd.DatetimeIndex):
+            for idx in value.index:
+                candidates.append(idx.tz_localize(None).date() if idx.tz is not None else idx.date())
+
+        for col in value.columns:
+            series = value[col]
+            if pd.api.types.is_datetime64_any_dtype(series):
+                for item in series.dropna():
+                    dt = _to_date(item)
+                    if dt is not None:
+                        candidates.append(dt)
+            elif "date" in str(col).lower() or "earnings" in str(col).lower():
+                converted = pd.to_datetime(series, errors="coerce")
+                for item in converted.dropna():
+                    dt = _to_date(item)
+                    if dt is not None:
+                        candidates.append(dt)
+        return candidates
+
+    if isinstance(value, (list, tuple, set, pd.Index)):
+        iterable = value
+    else:
+        iterable = [value]
+
+    for item in iterable:
+        if isinstance(item, (list, tuple, set, pd.Index)):
+            candidates.extend(_extract_date_candidates(item))
+            continue
+        dt = _to_date(item)
+        if dt is not None:
+            candidates.append(dt)
+
+    return candidates
+
+
+def get_next_earnings_info(ticker, today=None):
+    """
+    Find the next upcoming earnings date for a ticker.
+    Prefers ticker.calendar and falls back to ticker.earnings_dates.
+    Returns a dict with a date object, formatted string, and source name.
+    """
+    today = today or datetime.utcnow().date()
+
+    def _first_future_date(raw_value):
+        candidates = sorted({d for d in _extract_date_candidates(raw_value) if d >= today})
+        return candidates[0] if candidates else None
+
+    try:
+        calendar = ticker.calendar or {}
+        next_date = _first_future_date(calendar.get("Earnings Date"))
+        if next_date is not None:
+            return {
+                "date": next_date,
+                "date_str": next_date.strftime("%Y-%m-%d"),
+                "source": "calendar",
+            }
+    except Exception:
+        pass
+
+    try:
+        earnings_dates = ticker.earnings_dates
+        next_date = _first_future_date(earnings_dates)
+        if next_date is not None:
+            return {
+                "date": next_date,
+                "date_str": next_date.strftime("%Y-%m-%d"),
+                "source": "earnings_dates",
+            }
+    except Exception:
+        pass
+
+    return {"date": None, "date_str": None, "source": None}
+
+
 def validate_ticker(ticker_symbol):
     """
     Validate a ticker symbol by attempting to fetch basic info.
     Returns a dict with validation status and current price, or an error message.
     """
     try:
-        ticker = yf.Ticker(ticker_symbol)
-        info = ticker.info
+        ticker = _get_ticker_object(ticker_symbol)
+        info = _get_ticker_info(ticker_symbol)
 
         if not info or info.get("regularMarketPrice") is None:
             return {
@@ -114,8 +314,9 @@ def fetch_company_profile(ticker_symbol):
     Returns a dict of company info fields.
     """
     try:
-        ticker = yf.Ticker(ticker_symbol)
-        info = ticker.info
+        ticker = _get_ticker_object(ticker_symbol)
+        info = _get_ticker_info(ticker_symbol)
+        next_earnings = get_next_earnings_info(ticker)
 
         profile = {
             "longName": info.get("longName", "N/A"),
@@ -138,6 +339,7 @@ def fetch_company_profile(ticker_symbol):
             "trailingPE": info.get("trailingPE", "N/A"),
             "forwardPE": info.get("forwardPE", "N/A"),
             "beta": info.get("beta", "N/A"),
+            "nextEarningsDate": next_earnings.get("date_str") or "N/A",
         }
 
         return {"success": True, "data": profile}
@@ -151,7 +353,7 @@ def fetch_historical_data(ticker_symbol, period="1y", interval="1wk", bb_window=
     Returns a dict containing the DataFrame as JSON (for dcc.Store serialization).
     """
     try:
-        ticker = yf.Ticker(ticker_symbol)
+        ticker = _get_ticker_object(ticker_symbol)
 
         # Helper: convert period string to pandas DateOffset (approximate)
         def _period_to_offset(p):
@@ -266,15 +468,16 @@ def fetch_option_chain(ticker_symbol):
     Returns a dict with calls and puts DataFrames as JSON.
     """
     try:
-        ticker = yf.Ticker(ticker_symbol)
+        ticker = _get_ticker_object(ticker_symbol)
         today = datetime.utcnow()
+        today_date = today.date()
         expirations = ticker.options
 
         if not expirations:
             return {"success": False, "error": "No options data available for this ticker."}
 
         # Get current stock price
-        info = ticker.info
+        info = _get_ticker_info(ticker_symbol)
         current_price = info.get("regularMarketPrice", None)
         if current_price is None:
             hist = ticker.history(period="1d")
@@ -296,6 +499,19 @@ def fetch_option_chain(ticker_symbol):
         option_chain = ticker.option_chain(selected_exp)
         exp_datetime = datetime.strptime(selected_exp, "%Y-%m-%d")
         days_to_exp = (exp_datetime - today).days
+        next_earnings = get_next_earnings_info(ticker, today=today_date)
+        next_earnings_date = next_earnings.get("date")
+        next_earnings_date_str = next_earnings.get("date_str") or "N/A"
+        earnings_before_expiration = bool(
+            next_earnings_date is not None
+            and next_earnings_date <= exp_datetime.date()
+        )
+        if next_earnings_date is None:
+            next_earnings_status = "N/A"
+        elif earnings_before_expiration:
+            next_earnings_status = "before expiry"
+        else:
+            next_earnings_status = "after expiry"
 
         def enrich_options_df(df):
             """Add custom percentage columns and ensure Greek columns exist."""
@@ -359,6 +575,12 @@ def fetch_option_chain(ticker_symbol):
                 "current_price": current_price,
                 "num_otm_calls": len(otm_calls),
                 "num_otm_puts": len(otm_puts),
+                "next_earnings_date": next_earnings_date_str,
+                "next_earnings_days": (
+                    (next_earnings_date - today_date).days if next_earnings_date is not None else None
+                ),
+                "earnings_before_expiration": earnings_before_expiration,
+                "next_earnings_status": next_earnings_status,
             },
         }
     except Exception as e:
@@ -371,7 +593,7 @@ def fetch_analyst_ratings(ticker_symbol):
     Returns a dict with recommendations and upgrades/downgrades as JSON.
     """
     try:
-        ticker = yf.Ticker(ticker_symbol)
+        ticker = _get_ticker_object(ticker_symbol)
         result = {"success": True, "data": {}}
 
         # Recommendations summary
@@ -405,7 +627,7 @@ def fetch_earnings_data(ticker_symbol):
     Uses earnings_dates (still supported) and quarterly_income_stmt for net income.
     """
     try:
-        ticker = yf.Ticker(ticker_symbol)
+        ticker = _get_ticker_object(ticker_symbol)
         result = {"success": True, "data": {}}
 
         # Earnings dates (contains actual vs. estimate EPS)
@@ -468,8 +690,8 @@ def fetch_dividend_data(ticker_symbol):
     Returns a dict with dividend info and history as JSON.
     """
     try:
-        ticker = yf.Ticker(ticker_symbol)
-        info = ticker.info
+        ticker = _get_ticker_object(ticker_symbol)
+        info = _get_ticker_info(ticker_symbol)
 
         dividend_info = {
             "dividendRate": info.get("dividendRate", "N/A"),
@@ -526,7 +748,7 @@ def fetch_financials(ticker_symbol):
     Returns a dict with each financial statement as JSON.
     """
     try:
-        ticker = yf.Ticker(ticker_symbol)
+        ticker = _get_ticker_object(ticker_symbol)
         result = {"success": True, "data": {}}
 
         # Income Statement
@@ -586,7 +808,7 @@ def fetch_insider_transactions(ticker_symbol):
     Returns a dict with each dataset as JSON.
     """
     try:
-        ticker = yf.Ticker(ticker_symbol)
+        ticker = _get_ticker_object(ticker_symbol)
         result = {"success": True, "data": {}}
 
         # Insider Transactions
@@ -633,7 +855,7 @@ def fetch_insider_transactions(ticker_symbol):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-
+'''
 def fetch_all_data(ticker_symbol, period="1y", interval="1wk"):
     """
     Master function that fetches ALL data for a given ticker.
@@ -661,3 +883,4 @@ def fetch_all_data(ticker_symbol, period="1y", interval="1wk"):
     }
 
     return all_data
+'''
