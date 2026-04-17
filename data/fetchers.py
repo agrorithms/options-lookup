@@ -3,8 +3,24 @@ from datetime import datetime
 from functools import lru_cache
 import time
 import os
+from curl_cffi import requests as cffi_requests
 
 DEBUG_TIMING = os.environ.get("DEBUG_TIMING", "false").lower() == "true"
+
+# =============================================================================
+# SHARED SESSION — All yfinance calls use this curl_cffi session
+# yfinance 0.2.59+ requires curl_cffi, not requests.Session
+# =============================================================================
+
+
+def _create_session():
+    """Create a curl_cffi session that impersonates Chrome."""
+    session = cffi_requests.Session(impersonate="chrome")
+    
+    return session
+
+
+_session = _create_session()
 
 @lru_cache(maxsize=16)
 def _get_ticker_object(ticker_symbol):
@@ -12,7 +28,7 @@ def _get_ticker_object(ticker_symbol):
     Cache the yf.Ticker object to avoid re-instantiation.
     Cache holds up to 16 tickers (most recent).
     """
-    return yf.Ticker(ticker_symbol)
+    return yf.Ticker(ticker_symbol, session=_session)
 
 
 @lru_cache(maxsize=16)
@@ -32,6 +48,9 @@ def fetch_all_data(ticker_symbol, period="5y", interval="1wk"):
     Uses ThreadPoolExecutor to run API calls in parallel.
     """
     start_total = time.time()
+
+    # Rotate User-Agent for each new ticker fetch
+    #_session.headers["User-Agent"] = random.choice(_USER_AGENTS)
 
     # Validate first (must be sequential — no point parallelizing if invalid)
     validation = validate_ticker(ticker_symbol)

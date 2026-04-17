@@ -1,3 +1,4 @@
+curl_cffi>=0.5.0
 dash>=4.1.0
 dash-bootstrap-components>=2.0.4
 gunicorn==23.0.0
